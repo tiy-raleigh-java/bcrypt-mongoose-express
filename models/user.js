@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
+const findOrCreate = require('mongoose-findorcreate');
 
 // get a reference to Schema
 const Schema = mongoose.Schema;
@@ -7,9 +8,13 @@ const Schema = mongoose.Schema;
 // create a schema for a user
 const userSchema = new Schema({
   name: { type: String, required: true },
-  email: { type: String, required: true },
-  passwordHash: { type: String, required: true }
+  email: { type: String },
+  provider: { type: String, required: true },
+  providerId: { type: String },
+  passwordHash: { type: String }
 });
+
+userSchema.plugin(findOrCreate);
 
 userSchema.methods.setPassword = function(password) {
   this.passwordHash = bcrypt.hashSync(password, 8);

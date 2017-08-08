@@ -7,6 +7,7 @@ const flash = require('express-flash-messages');
 // require stuff for passport
 const passport = require('passport');
 const LocalStrategy = require('passport-local').Strategy;
+const TwitterStrategy = require('passport-twitter').Strategy;
 
 // mongoose. not a mammal
 const mongoose = require('mongoose');
@@ -31,6 +32,36 @@ passport.use(
       // there was a problem
       .catch(err => done(err));
   })
+);
+
+// use passport with Twitter
+passport.use(
+  new TwitterStrategy(
+    {
+      consumerKey: process.env.TWITTER_API_KEY,
+      consumerSecret: process.env.TWITTER_API_SECRET,
+      callbackURL: 'http://localhost:3000/auth/twitter/callback'
+    },
+    function(token, tokenSecret, profile, done) {
+      // function to get a user from the returned data
+      User.findOrCreate(
+        {
+          provider: profile.provider,
+          providerId: profile.id
+        },
+        {
+          name: profile.displayName
+        },
+        (err, user) => {
+          console.log(err);
+          if (err) {
+            return done(err);
+          }
+          done(null, user);
+        }
+      );
+    }
+  )
 );
 
 // store the user's id in the session
@@ -88,11 +119,25 @@ app.get('/', requireLogin, (req, res) => {
   res.render('home', { user: req.user });
 });
 
+// local login form
 app.get('/login', (req, res) => {
   //console.log('errors:', res.locals.getMessages());
   res.render('loginForm', { failed: req.query.failed });
 });
 
+// login via twitter
+app.get('/auth/twitter', passport.authenticate('twitter'));
+
+// this is the callback called by twitter after a login
+app.get(
+  '/auth/twitter/callback',
+  passport.authenticate('twitter', {
+    successRedirect: '/',
+    failureRedirect: '/login?failed=true'
+  })
+);
+
+// endpoint for local login sumbit
 app.post(
   '/login',
   passport.authenticate('local', {
@@ -108,6 +153,7 @@ app.get('/register', (req, res) => {
 
 app.post('/register', (req, res) => {
   let user = new User(req.body);
+  user.provider = 'local';
   user.setPassword(req.body.password);
 
   user
@@ -116,6 +162,12 @@ app.post('/register', (req, res) => {
     .then(() => res.redirect('/'))
     // if bad...
     .catch(err => console.log(err));
+});
+
+// log out!!!!!
+app.get('/logout', function(req, res) {
+  req.logout();
+  res.redirect('/');
 });
 
 mongoose
