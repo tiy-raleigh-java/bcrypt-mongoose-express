@@ -2,15 +2,51 @@ const express = require('express');
 const exphbs = require('express-handlebars');
 const bodyParser = require('body-parser');
 const session = require('express-session');
+const flash = require('express-flash-messages');
+
+// require stuff for passport
+const passport = require('passport');
+const LocalStrategy = require('passport-local').Strategy;
 
 // mongoose. not a mammal
 const mongoose = require('mongoose');
 // bluebird is a promise library. checkout bluebirdjs.org
 const bluebird = require('bluebird');
-// set mongoose's primise library to be bluebird
-mongoose.Promise = bluebird;
 
 const User = require('./models/user');
+
+// configure passport
+passport.use(
+  new LocalStrategy(function(email, password, done) {
+    console.log('LocalStrategy', email, password);
+    User.authenticate(email, password)
+      // success!!
+      .then(user => {
+        if (user) {
+          done(null, user);
+        } else {
+          done(null, null, { message: 'There was no user with this email and password.' });
+        }
+      })
+      // there was a problem
+      .catch(err => done(err));
+  })
+);
+
+// store the user's id in the session
+passport.serializeUser((user, done) => {
+  console.log('serializeUser');
+  done(null, user.id);
+});
+
+// get the user from the session based on the id
+passport.deserializeUser((id, done) => {
+  console.log('deserializeUser');
+  User.findById(id).then(user => done(null, user));
+});
+
+// set mongoose's primise library to be bluebird
+mongoose.Promise = bluebird;
 
 // create express app
 const app = express();
@@ -20,10 +56,6 @@ app.engine('handlebars', exphbs({ defaultLayout: 'main' }));
 app.set('views', './views');
 app.set('view engine', 'handlebars');
 
-//tell express to use the bodyParser middleware to parse form data
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: false }));
-
 app.use(
   session({
     secret: 'keyboard kitten',
@@ -32,36 +64,43 @@ app.use(
   })
 );
 
-app.get('/', (req, res) => {
-  User.findById(req.session.userId)
-    // if I find the user...
-    .then(user => {
-      if (!user) {
-        res.redirect('/login');
-      } else {
-        res.render('home', { user: user });
-      }
-    });
+// connect passport to express boilerplate
+app.use(passport.initialize());
+app.use(passport.session());
+app.use(flash());
+
+//tell express to use the bodyParser middleware to parse form data
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: false }));
+
+// this middleware function will check to see if we have a user in the session.
+// if not, we redirect to the login form.
+const requireLogin = (req, res, next) => {
+  console.log('req.user', req.user);
+  if (req.user) {
+    next();
+  } else {
+    res.redirect('/login');
+  }
+};
+
+app.get('/', requireLogin, (req, res) => {
+  res.render('home', { user: req.user });
 });
 
 app.get('/login', (req, res) => {
-  res.render('loginForm');
+  //console.log('errors:', res.locals.getMessages());
+  res.render('loginForm', { failed: req.query.failed });
 });
 
-app.post('/login', (req, res) => {
-  User.authenticate(req.body.email, req.body.password)
-    // success
-    .then(user => {
-      if (user) {
-        req.session.userId = user._id;
-        res.redirect('/');
-      } else {
-        res.render('loginForm');
-      }
-    });
-  // // bad login
-  // .catch(....)
-});
+app.post(
+  '/login',
+  passport.authenticate('local', {
+    successRedirect: '/',
+    failureRedirect: '/login',
+    failureFlash: true
+  })
+);
 
 app.get('/register', (req, res) => {
   res.render('registrationForm');
