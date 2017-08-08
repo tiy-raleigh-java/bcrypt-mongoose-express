@@ -97,7 +97,7 @@ app.post(
   '/login',
   passport.authenticate('local', {
     successRedirect: '/',
-    failureRedirect: '/login',
+    failureRedirect: '/login?failed=true',
     failureFlash: true
   })
 );
